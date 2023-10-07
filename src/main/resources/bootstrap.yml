@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: layout-service
+server:
+  port: 8080
