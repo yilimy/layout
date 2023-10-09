@@ -12,3 +12,7 @@ pdf 相关开源项目
 > Connla  
 
 [itext7系列教程](https://www.zhihu.com/column/c_1380534374446899200)
+
+#### itext
+《digitalsignatures20130304.pdf》  
+[Digital signatures for PDF Documents](https://itextpdf.com/resources/books/digital-signatures-pdf/intro)
