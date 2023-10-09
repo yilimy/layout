@@ -9,6 +9,7 @@ import com.gomain.layout.pojo.SdkStampRsp;
 import com.gomain.layout.utils.HttpClientUtils;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Base64;
 import java.util.Optional;
 
 /**
@@ -37,6 +38,15 @@ public class SealServiceImpl implements SealService {
                 .orElseThrow(() -> new RuntimeException("获取印章失败"));
     }
 
+    @Override
+    public byte[] findSealByte(String userId, String sealCode) {
+        QuerySealRsp seal = findSeal(userId, sealCode);
+        return Optional.ofNullable(seal)
+                .map(QuerySealRsp::getSealData)
+                .map(Base64.getDecoder()::decode)
+                .orElseThrow(() -> new RuntimeException("获取印章失败"));
+    }
+
     public SdkStampRsp sdkStamp(String userId, String sealCode, String digest) {
         SdkReq sdkReq = new SdkReq(userId, "108", sealCode, digest);
         TypeReference<BWJsonResult<SdkStampRsp>> typeReference = new TypeReference<BWJsonResult<SdkStampRsp>>(){};
@@ -49,5 +59,15 @@ public class SealServiceImpl implements SealService {
                 .map(BWJsonResult::getData)
                 .map(list -> list.get(0))
                 .orElseThrow(() -> new RuntimeException("SDK签章失败"));
+    }
+
+    @Override
+    public byte[] sdkStampByte(String userId, String sealCode, byte[] hash) {
+        String digest = Base64.getEncoder().encodeToString(hash);
+        SdkStampRsp sdkStamp = sdkStamp(userId, sealCode, digest);
+        return Optional.ofNullable(sdkStamp)
+                .map(SdkStampRsp::getPuchSignValue)
+                .map(Base64.getDecoder()::decode)
+                .orElseThrow(() -> new RuntimeException("调用SDK签章失败"));
     }
 }

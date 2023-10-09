@@ -6,8 +6,6 @@ import com.baiwang.cloud.stamp.seseal.SealFactory;
 import com.baiwang.cloud.stamp.seseal.core.SealInterface;
 import com.gomain.layout.integration.SealService;
 import com.gomain.layout.pojo.Constant;
-import com.gomain.layout.pojo.QuerySealRsp;
-import com.gomain.layout.pojo.SdkStampRsp;
 import com.gomain.layout.pojo.StampStrategy;
 import com.gomain.layout.pojo.StrategyPosition;
 import com.itextpdf.text.Image;
@@ -34,11 +32,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.Security;
 import java.security.cert.CertificateFactory;
-import java.util.Base64;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * 参考《digitalsignatures20130304.pdf》第29页
@@ -58,65 +54,82 @@ public class PdfStampService {
 
     /**
      * 对文件做一次签章
+     * <p>
+     *     1. 暂未实现一个章在多个页面显示，但只有一个签章结构的功能。一次签章一个PdfSignatureAppearance，指定一个page。
+     *     2. 多次签章需要多次文件IO
+     * </p>
      * @param path 待签章文件路径
      * @param dest 签章后文件路径
      * @param strategy 签章策略
      * @throws Exception Exception
      */
     public void stampSingle(String path, String dest, StampStrategy strategy) throws Exception{
-        // Creating the reader and the stamper
-        PdfReader reader = new PdfReader(path);
-        FileOutputStream os = new FileOutputStream(dest);
-        // （第51页） Code sample 2.17: adding an extra signature（第51页）
-//        PdfStamper stamper = PdfStamper.createSignature(reader, os, '\0', null, true);
-        PdfStamper stamper = PdfStamper.createSignature(reader, os, '\0');
-        byte[] sealBytes = findSeal(strategy);
-        int sealSize = sealBytes.length;
-        SealInterface sealInterface = SealFactory.getSealInstance(sealBytes);
-        // 解析印章中的签名证书
-        // 注册BC，否则不识别SM2证书和算法
-        Security.addProvider(new BouncyCastleProvider());
-        CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509", "BC");
-        java.security.cert.Certificate cert;
-        try (ByteArrayInputStream bais = new ByteArrayInputStream(sealInterface.getSignerCert())){
-            cert = certificateFactory.generateCertificate(bais);
+        try {
+            // Creating the reader and the stamper
+            PdfReader reader = new PdfReader(path);
+//            log.info("====> {}", reader.getPdfVersion());
+            FileOutputStream os = new FileOutputStream(dest);
+            // （第51页） Code sample 2.17: adding an extra signature（第51页）
+            PdfStamper stamper = PdfStamper.createSignature(reader, os, '\0', null, true);
+            // 如果不使用追加模式，后签章会破坏之前所有签章结构。未签署文件不受影响。
+//            PdfStamper stamper = PdfStamper.createSignature(reader, os, '\0');
+            byte[] sealBytes = sealService.findSealByte(strategy.getUserId(), strategy.getSealId());
+            int sealSize = sealBytes.length;
+            SealInterface sealInterface = SealFactory.getSealInstance(sealBytes);
+            // 解析印章中的签名证书
+            // 注册BC，否则不识别SM2证书和算法
+            Security.addProvider(new BouncyCastleProvider());
+            CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509", "BC");
+            java.security.cert.Certificate cert;
+            try (ByteArrayInputStream bais = new ByteArrayInputStream(sealInterface.getSignerCert())){
+                cert = certificateFactory.generateCertificate(bais);
+            }
+            List<StrategyPosition> positions = strategy.getPositions();
+            if (positions.size() != 1){
+                throw new RuntimeException("不支持多个签章");
+            }
+            StrategyPosition position = positions.get(0);
+            // Creating the appearance
+            PdfSignatureAppearance appearance = stamper.getSignatureAppearance();
+            int page = position.getPage();
+            float x = position.getX();
+            float y = position.getY();
+            // 印章单位是毫米，需要转磅(2.83)
+            float urx = x + sealInterface.getImgWidth() * Constant.POUND_PER_MM;
+            float ury = y + sealInterface.getImgHeight() * Constant.POUND_PER_MM;
+            // 取页面宽高
+            Rectangle cropBox = reader.getCropBox(page);
+            float ph = cropBox.getHeight();
+            // 坐标系转换，默认坐下顶点
+            if (position.getCoordinate() == Constant.COORDINATE_LEFT_TOP) {
+                y = ph - y;
+                ury = ph - ury;
+            }
+            // 设置可视区域
+            // fieldName 在本文件中唯一
+            appearance.setVisibleSignature(new Rectangle(x, y, urx, ury), page, "sig_" + System.currentTimeMillis());
+            /*
+             * 《digitalsignatures20130304.pdf》第44页
+             * renderingMode 默认值：RenderingMode.DESCRIPTION
+             * 置空文本，因为默认显示：“Digitally signed by ... Date : ...”
+             * appearance.setLayer2Text("");
+             * appearance.setImage(Image.getInstance(sealInterface.getImage()));
+             * 如果指定 renderingMode 为 RenderingMode.GRAPHIC，则将 setImage 替换为 setSignatureGraphic
+             */
+            appearance.setRenderingMode(PdfSignatureAppearance.RenderingMode.GRAPHIC);
+            appearance.setSignatureGraphic(Image.getInstance(sealInterface.getImage()));
+            // 估算签章结构体大小
+            int estimatedSize = sealSize + sealInterface.getSignerCert().length + 1024;
+            // 设置签章结构体
+            signDetached(appearance, cert, estimatedSize, strategy);
+        } finally {
+            // 出现错误时，删除错误文件
+            if (FileUtil.exist(dest) && FileUtil.size(new File(dest)) == 0 ) {
+                log.error("写入文件为空，删除文件:{}", dest);
+                FileUtil.del(dest);
+            }
         }
-        List<StrategyPosition> positions = strategy.getPositions();
-        if (positions.size() != 1){
-            throw new RuntimeException("不支持多个签章");
-        }
-        StrategyPosition position = positions.get(0);
-        // Creating the appearance
-        PdfSignatureAppearance appearance = stamper.getSignatureAppearance();
-        int page = position.getPage();
-        float x = position.getX();
-        float y = position.getY();;
-        // 印章单位是毫米，需要转磅(2.83)
-        float urx = x + sealInterface.getImgWidth() * Constant.POUND_PER_MM;
-        float ury = y + sealInterface.getImgHeight() * Constant.POUND_PER_MM;
-        // 取页面宽高
-        Rectangle cropBox = reader.getCropBox(page);
-        float ph = cropBox.getHeight();
-        // 坐标系转换，默认坐下顶点
-        if (position.getCoordinate() == Constant.COORDINATE_LEFT_TOP) {
-            y = ph - y;
-            ury = ph - ury;
-        }
-        // 设置可视区域
-        appearance.setVisibleSignature(new Rectangle(x, y, urx, ury), page, "sig");
-        // 《digitalsignatures20130304.pdf》第44页
-        // 置空文本，默认显示：“Digitally signed by ... Date : ...”
-        appearance.setLayer2Text("");
-        appearance.setImage(Image.getInstance(sealInterface.getImage()));
-        // 估算签章结构体大小
-        int estimatedSize = sealSize + sealInterface.getSignerCert().length + 1024;
-        // 设置签章结构体
-        signDetached(appearance, cert, estimatedSize, strategy);
-        // 出现错误时，删除错误文件，建议放在final中执行
-        if (FileUtil.exist(dest) && FileUtil.size(new File(dest)) == 0 ) {
-            log.error("写入文件为空，删除文件:{}", dest);
-            FileUtil.del(dest);
-        }
+
     }
 
     /**
@@ -136,7 +149,7 @@ public class PdfStampService {
         sap.setCryptoDictionary(dic);
 
         HashMap<PdfName, Integer> exc = new HashMap<>();
-        // 原方法signDetached中就是测量完大小后x2,+2
+        // PdfSignatureAppearance.preClose中要求byte_size*2+2.
         exc.put(PdfName.CONTENTS, estimatedSize * 2 + 2);
         sap.preClose(exc);
         // 文件保护区摘要
@@ -145,7 +158,7 @@ public class PdfStampService {
             hash = SM3.create().digest(data);
         }
         // 签章
-        byte[] encodedSig = doStamp(hash, strategy);
+        byte[] encodedSig = sealService.sdkStampByte(strategy.getUserId(), strategy.getSealId(), hash);
 
         if (estimatedSize < encodedSig.length)
             throw new IOException("Not enough space");
@@ -156,33 +169,5 @@ public class PdfStampService {
         PdfDictionary dic2 = new PdfDictionary();
         dic2.put(PdfName.CONTENTS, new PdfString(paddedSig).setHexWriting(true));
         sap.close(dic2);
-    }
-
-    /**
-     * 调用远程，获取印章
-     * @param strategy 用户-印章关系
-     * @return 印章对象
-     */
-    private byte[] findSeal(StampStrategy strategy) {
-        QuerySealRsp seal = sealService.findSeal(strategy.getUserId(), strategy.getSealId());
-        return Optional.ofNullable(seal)
-                .map(QuerySealRsp::getSealData)
-                .map(Base64.getDecoder()::decode)
-                .orElseThrow(() -> new RuntimeException("获取印章失败"));
-    }
-
-    /**
-     * 调用远程签章
-     * @param hash 原文摘要
-     * @param strategy 用户-印章关系
-     * @return 签章结构体
-     */
-    private byte[] doStamp(byte[] hash, StampStrategy strategy) {
-        String digest = Base64.getEncoder().encodeToString(hash);
-        SdkStampRsp sdkStamp = sealService.sdkStamp(strategy.getUserId(), strategy.getSealId(), digest);
-        return Optional.ofNullable(sdkStamp)
-                .map(SdkStampRsp::getPuchSignValue)
-                .map(Base64.getDecoder()::decode)
-                .orElseThrow(() -> new RuntimeException("调用SDK签章失败"));
     }
 }
