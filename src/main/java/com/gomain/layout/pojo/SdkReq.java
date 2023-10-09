@@ -12,15 +12,24 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class SdkReq {
     /** 用户标识 **/
-    private String userId;
+    private String outUserId;
     /** 业务标识 **/
     private String dataType;
     /** 印章标识 **/
     private String sealId;
+    /** 待签名摘要 **/
+    private String digest;
 
     public SdkReq(String userId, String dataType, String sealId) {
-        this.userId = userId;
+        this.outUserId = userId;
         this.dataType = dataType;
         this.sealId = sealId;
+    }
+
+    public SdkReq(String outUserId, String dataType, String sealId, String digest) {
+        this.outUserId = outUserId;
+        this.dataType = dataType;
+        this.sealId = sealId;
+        this.digest = digest;
     }
 }

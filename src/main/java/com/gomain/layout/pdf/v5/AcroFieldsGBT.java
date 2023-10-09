@@ -93,14 +93,6 @@ public class AcroFieldsGBT {
             log.error("签章时间无效, signDate={}, validate=[{},{}]", signDate, seSeal.notBefore(), seSeal.notAfter());
             throw new RuntimeException("签章时间无效");
         }
-        // 验证原文摘要
-        byte[] dataHash = Optional.of(signInstance)
-                .map(SeSignImp::getSesSign)
-                .map(SES_Sign::getTBS_Sign)
-                .map(TBS_Sign::getDataHash)
-                .map(DERBitString::getOctets)
-                .orElseThrow(() -> new RuntimeException("读取待签名原文的杂凑值失败"));
-        String dataHashHex = HexUtil.encodeHexStr(dataHash);
         // pdf保护区摘要值
         byte[] filedHashHex = updateByteRangeAndSm3(v);
         // 签章验证
