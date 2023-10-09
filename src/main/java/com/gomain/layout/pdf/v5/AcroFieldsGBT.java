@@ -1,7 +1,6 @@
 package com.gomain.layout.pdf.v5;
 
 import cn.hutool.core.io.IoUtil;
-import cn.hutool.core.util.HexUtil;
 import cn.hutool.crypto.digest.SM3;
 import com.baiwang.cloud.stamp.seseal.SealFactory;
 import com.baiwang.cloud.stamp.seseal.bean.SES_Sign;
@@ -24,7 +23,6 @@ import com.itextpdf.text.pdf.security.PdfPKCS7;
 import com.itextpdf.text.pdf.security.VerificationException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.asn1.DERBitString;
 import org.ofdrw.gm.sm2strut.VerifyInfo;
 
 import java.io.IOException;
@@ -42,8 +40,8 @@ import java.util.Optional;
 @Slf4j
 @Getter
 public class AcroFieldsGBT {
-    private AcroFields fields;
-    private PdfReader reader;
+    private final AcroFields fields;
+    private final PdfReader reader;
 
     public AcroFieldsGBT(PdfReader reader, AcroFields fields) {
         this.fields = fields;

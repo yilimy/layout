@@ -75,7 +75,6 @@ public class PdfStampService {
         byte[] sealBytes = findSeal();
         int sealSize = sealBytes.length;
         SealInterface sealInterface = SealFactory.getSealInstance(sealBytes);
-        sealBytes = null;
         // 解析印章中的签名证书
         // 注册BC，否则不识别SM2证书和算法
         Security.addProvider(new BouncyCastleProvider());
@@ -134,11 +133,11 @@ public class PdfStampService {
         dic.setDate(new PdfDate(sap.getSignDate())); // time-stamp will over-rule this
         sap.setCryptoDictionary(dic);
 
-        HashMap<PdfName, Integer> exc = new HashMap<PdfName, Integer>();
+        HashMap<PdfName, Integer> exc = new HashMap<>();
         exc.put(PdfName.CONTENTS, estimatedSize * 2 + 2);
         sap.preClose(exc);
         // 文件保护区摘要
-        byte[] hash = null;
+        byte[] hash;
         try (InputStream data = sap.getRangeStream()) {
             hash = SM3.create().digest(data);
         }

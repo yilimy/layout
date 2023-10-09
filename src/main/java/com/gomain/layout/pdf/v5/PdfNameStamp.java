@@ -10,12 +10,4 @@ public class PdfNameStamp extends PdfName {
     public PdfNameStamp(String name) {
         super(name);
     }
-
-    public PdfNameStamp(String name, boolean lengthCheck) {
-        super(name, lengthCheck);
-    }
-
-    public PdfNameStamp(byte[] bytes) {
-        super(bytes);
-    }
 }
